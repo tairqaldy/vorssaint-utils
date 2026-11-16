@@ -10,6 +10,7 @@ struct NotchAgentsSettingsControls: View {
     @ObservedObject private var usage = AgentUsageService.shared
     @AppStorage(DefaultsKey.notchAgentsClaude) private var claude = true
     @AppStorage(DefaultsKey.notchAgentsClaudeProfile) private var claudeProfile = ""
+    @AppStorage(DefaultsKey.notchAgentsClaudeAllProfiles) private var claudeAllProfiles = false
     @AppStorage(DefaultsKey.notchAgentsCodex) private var codex = true
     @AppStorage(DefaultsKey.notchAgentsOpenCode) private var opencode = true
     @AppStorage(DefaultsKey.notchAgentsCopilot) private var copilot = true
@@ -156,6 +157,10 @@ struct NotchAgentsSettingsControls: View {
             if claude { findClaudeApp() }
         }
         .onChange(of: claude) { _, on in if on { findClaudeApp() } }
+        .onChange(of: claudeAllProfiles) { _, _ in
+            findRoots()
+            NotchService.shared.syncWithPreferences()
+        }
         .onChange(of: claudeProfile) { _, _ in
             claudeAppFileCheck = nil
             findRoots()
@@ -266,7 +271,8 @@ struct NotchAgentsSettingsControls: View {
 
     /// Where the logs live is checked when the page opens, not on every draw.
     private func findRoots() {
-        let found = AgentLogRoot.all(claudeProfile: ClaudeAccountProfile(directory: claudeProfile)).filter(\.exists).map(\.provider)
+        let found = AgentLogRoot.all(claudeProfile: ClaudeAccountProfile(directory: claudeProfile),
+                                     allClaudeProfiles: claudeAllProfiles).filter(\.exists).map(\.provider)
         roots = Dictionary(uniqueKeysWithValues: AgentProvider.allCases.map { ($0, found.contains($0)) })
     }
 

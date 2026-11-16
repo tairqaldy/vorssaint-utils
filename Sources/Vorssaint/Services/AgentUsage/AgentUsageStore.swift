@@ -472,9 +472,16 @@ struct AgentLogRoot: Equatable {
 
     /// Canonical, because file events report real paths: a folder kept as a
     /// link elsewhere, as dotfile setups do, would otherwise never match.
+    /// Profiles that share a folder, or link one to another, are read once:
+    /// roots are compared by their real paths, and folder links inside a
+    /// root are never walked.
     static func all(home: URL = FileManager.default.homeDirectoryForCurrentUser,
-                    claudeProfile: ClaudeAccountProfile = ClaudeAccountProfile()) -> [AgentLogRoot] {
-        let claude = claudeProfile.logURLs(home: home).map { AgentLogRoot(provider: .claude, url: canonical($0)) }
+                    claudeProfile: ClaudeAccountProfile = ClaudeAccountProfile(),
+                    allClaudeProfiles: Bool = false) -> [AgentLogRoot] {
+        var seen = Set<String>()
+        let claude = ClaudeAccountProfile.usageProfiles(selected: claudeProfile, includingOthers: allClaudeProfiles, home: home)
+            .flatMap { $0.logURLs(home: home) }.map(canonical).filter { seen.insert($0.path).inserted }
+            .map { AgentLogRoot(provider: .claude, url: $0) }
         return claude + [(AgentProvider.codex, ".codex/sessions"), (.codex, ".codex/archived_sessions"),
          (.opencode, ".local/share/opencode"), (.copilot, ".copilot/session-state")].map { provider, path in
             AgentLogRoot(provider: provider, url: canonical(home.appending(path: path, directoryHint: .isDirectory)))

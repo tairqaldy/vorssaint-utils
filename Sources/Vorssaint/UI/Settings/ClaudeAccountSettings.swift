@@ -7,6 +7,7 @@ import SwiftUI
 /// Chooses an existing login. Claude Code remains responsible for signing in.
 struct ClaudeAccountSettings: View {
     @AppStorage(DefaultsKey.notchAgentsClaudeProfile) private var selected = ""
+    @AppStorage(DefaultsKey.notchAgentsClaudeAllProfiles) private var allProfiles = false
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var usage = AgentUsageService.shared
     @State private var entries: [Entry] = []
@@ -53,6 +54,9 @@ struct ClaudeAccountSettings: View {
                 }
             }
             Button(text.chooseFolder) { chooseFolder() }
+            Toggle(text.allProfiles, isOn: $allProfiles).toggleStyle(.switch)
+            Text(text.allProfilesExplanation).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Text(text.explanation).font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Link(text.signInHelp, destination: URL(string: "https://code.claude.com/docs/en/authentication#log-in-with-multiple-accounts")!)

@@ -27,6 +27,7 @@ final class AgentUsageService: ObservableObject {
     @Published private(set) var claudeAccountChecking = false
     @Published private(set) var claudeAccountFailure: AgentClaudeServer.Failure?
     @Published private(set) var claudeProfile = ClaudeAccountProfile()
+    @Published private(set) var claudeAllProfiles = false
     @Published private(set) var claudeAccountIdentity: ClaudeAccountProfile.Identity?
     /// The day of the price list in use.
     @Published private(set) var pricesUpdated: Date?
@@ -103,6 +104,7 @@ final class AgentUsageService: ObservableObject {
     private var claudeOrganization: String?
     private var claudeIdentity: ClaudeAccountProfile.Identity?
     private var readerClaudeProfile = ClaudeAccountProfile()
+    private var readerClaudeAllProfiles = false
     private var claudeProfileModified: Date?
     private var claudeAppModified: Date?
     private var claudeAppSamples: [AgentClaudeAppUsage.Sample] = []
@@ -126,22 +128,25 @@ final class AgentUsageService: ObservableObject {
         guard NotchAgentSupport.isEnabled() else { stop(); return }
         let wanted = NotchAgentSupport.providers()
         let profile = ClaudeAccountProfile.selected()
+        let allProfiles = ClaudeAccountProfile.countsAllProfiles()
         let showingPage = pageVisible
         // An agent turned off is no longer read at all, and one turned on is
         // read from its start: both take a fresh reading, which would not
         // resume progress saved for the old set, so it goes at once. Codex
         // accounts keep their checks: they read no log.
-        if running, wanted != providers || profile != claudeProfile {
+        if running, wanted != providers || profile != claudeProfile || allProfiles != claudeAllProfiles {
             stop(keepingProgress: false, pausingAccounts: false)
         }
         if claudeProfile != profile { claudeProfile = profile }
+        if claudeAllProfiles != allProfiles { claudeAllProfiles = allProfiles }
         pageVisible = showingPage
         if !running {
             running = true
             session += 1
             cancellation = Cancellation()
             providers = wanted
-            start(session: session, providers: Set(wanted), cancellation: cancellation, claudeProfile: profile)
+            start(session: session, providers: Set(wanted), cancellation: cancellation, claudeProfile: profile,
+                  allClaudeProfiles: allProfiles)
         } else if paused {
             resume()
         }
@@ -176,7 +181,8 @@ final class AgentUsageService: ObservableObject {
         startTimer()
         queue.async { [self] in
             guard readerSession >= 0 else { return }
-            watch(AgentLogRoot.all(home: home, claudeProfile: readerClaudeProfile).filter { enabled.contains($0.provider) })
+            watch(AgentLogRoot.all(home: home, claudeProfile: readerClaudeProfile,
+                                   allClaudeProfiles: readerClaudeAllProfiles).filter { enabled.contains($0.provider) })
             filesChanged([], rescan: true)
             startPolling()
             // Time went by meanwhile: a window or the day may have moved on.
@@ -285,20 +291,21 @@ final class AgentUsageService: ObservableObject {
     }
 
     private func start(session: Int, providers: Set<AgentProvider>, cancellation: Cancellation,
-                       claudeProfile: ClaudeAccountProfile = ClaudeAccountProfile()) {
+                       claudeProfile: ClaudeAccountProfile = ClaudeAccountProfile(), allClaudeProfiles: Bool = false) {
         startTimer()
         queue.async { [self] in
             readerSession = session
             readerCancellation = cancellation
             enabled = providers
             readerClaudeProfile = claudeProfile
+            readerClaudeAllProfiles = allClaudeProfiles
             store = AgentUsageStore()
             cursors.removeAll()
             // Prices first, so the first read is already priced.
             loadPrices()
             // Keep the loading state until all initial history has been read.
             let horizon = Date().addingTimeInterval(-Self.horizon)
-            let roots = AgentLogRoot.all(home: home, claudeProfile: claudeProfile).filter { providers.contains($0.provider) }
+            let roots = AgentLogRoot.all(home: home, claudeProfile: claudeProfile, allClaudeProfiles: allClaudeProfiles).filter { providers.contains($0.provider) }
             let files = AgentLogReader.discover(roots, since: horizon)
             // Resumes where the last launch stopped, among the logs there now.
             if let saved = AgentUsageArchive.load(), saved.providers == providers {
@@ -592,7 +599,8 @@ final class AgentUsageService: ObservableObject {
             // A folder that appears later, like a first Codex session, is
             // picked up without a restart.
             if now.timeIntervalSince(lastRootCheck) > 300 {
-                let roots = AgentLogRoot.all(home: home, claudeProfile: readerClaudeProfile).filter { enabled.contains($0.provider) }
+                let roots = AgentLogRoot.all(home: home, claudeProfile: readerClaudeProfile,
+                                   allClaudeProfiles: readerClaudeAllProfiles).filter { enabled.contains($0.provider) }
                 if roots.filter(\.exists) != watchedRoots {
                     for file in AgentLogReader.discover(roots, since: now.addingTimeInterval(-Self.horizon)) {
                         if read(file.path, provider: file.provider) { changed = true }

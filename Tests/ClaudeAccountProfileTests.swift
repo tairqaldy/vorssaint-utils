@@ -58,12 +58,13 @@ enum ClaudeAccountProfileTests {
             try environment(suite, home: home, work: work)
             try conversations(suite, home: home, work: work)
             try sourceChanges(suite, home: home, work: work)
+            try allProfiles(suite)
             try boundaries(suite, home: home, work: work)
         } catch { suite.expect(false, "Claude account profiles: \(error)") }
         for language in AppLanguage.allCases {
             let text = FeatureStrings.claudeAccount(language)
             suite.expect([text.title, text.defaultAccount, text.chooseFolder, text.explanation, text.invalidFolder,
-                          text.unknownAccount, text.noLimits, text.signInHelp].allSatisfy { !$0.isEmpty },
+                          text.unknownAccount, text.noLimits, text.signInHelp, text.allProfiles, text.allProfilesExplanation].allSatisfy { !$0.isEmpty },
                          "Claude account selection is localized in \(language.rawValue)")
         }
         let payload: [String: Any] = [SettingsBackupSupport.formatVersionKey: SettingsBackupSupport.formatVersion,
@@ -76,6 +77,47 @@ enum ClaudeAccountProfileTests {
         suite.expect(tiles.first?.accountID == "work" && tiles.last?.accountID == nil
                         && NotchAgentSupport.height(of: tiles) == NotchAgentSupport.accountCardHeight,
                      "a selected Claude account has room for its identity, refresh and failure state")
+    }
+
+    /// Spending from every profile adds each profile's own sessions once,
+    /// even when one profile links a project folder to another's.
+    private static func allProfiles(_ suite: TestSuite) throws {
+        let manager = FileManager.default
+        let home = manager.temporaryDirectory.appending(path: "vorssaint-claude-all-profiles-\(UUID())")
+        defer { try? manager.removeItem(at: home) }
+        try manager.createDirectory(at: home, withIntermediateDirectories: true)
+        let personal = ClaudeAccountProfile()
+        let work = ClaudeAccountProfile(directory: home.appending(path: ".claude-work").path)
+        for (profile, name, used) in [(personal, "personal", 30), (work, "work", 7)] {
+            let folder = profile.configurationURL(home: home)
+            try manager.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            try saveAccount(name, to: profile.profileURL(home: home))
+            let log = folder.appending(path: "projects/\(name)-project/session.jsonl")
+            try manager.createDirectory(at: log.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let line = #"{"type":"assistant","timestamp":\#(Date().timeIntervalSince1970),"sessionId":"\#(name)","requestId":"\#(name)-r","message":{"id":"\#(name)-m","model":"claude-opus-5-5","stop_reason":"end_turn","usage":{"input_tokens":\#(used),"output_tokens":1}}}"#
+            try Data((line + "\n").utf8).write(to: log)
+        }
+        // Dotfile setups link one profile's project folder into another.
+        try manager.createSymbolicLink(at: work.configurationURL(home: home).appending(path: "projects/personal-project"),
+                                       withDestinationURL: personal.configurationURL(home: home).appending(path: "projects/personal-project"))
+        let claudeRoots = { (profile: ClaudeAccountProfile, all: Bool) in
+            AgentLogRoot.all(home: home, claudeProfile: profile, allClaudeProfiles: all).filter { $0.provider == .claude }
+        }
+        suite.expect(claudeRoots(work, false).count == 1 && Set(claudeRoots(work, true).map(\.url))
+                        == Set((personal.logURLs(home: home) + work.logURLs(home: home)).map(AgentLogRoot.canonical)),
+                     "all profiles adds the default login's and the selected profile's log folders once each")
+        let host = AgentUsageReadTests.Host()
+        host.home = home
+        host.start(session: 1, providers: [.claude], cancellation: AgentUsageReadTests.Cancellation())
+        suite.expect(host.snapshot.usage(.today).total.tokens.input == 30, "by default only the selected profile counts")
+        for (session, profile) in [(2, personal), (3, work)] {
+            host.start(session: session, providers: [.claude], cancellation: AgentUsageReadTests.Cancellation(),
+                       claudeProfile: profile, allClaudeProfiles: true)
+            suite.expect(host.snapshot.usage(.today).total.tokens.input == 37 && host.cursors.count == 2,
+                         "all profiles count once each from \(profile.name(defaultName: "default")): tokens \(host.snapshot.usage(.today).total.tokens.input), logs \(host.cursors.count)")
+        }
+        suite.expect(Defaults.registeredDefaults[DefaultsKey.notchAgentsClaudeAllProfiles] as? Bool == false,
+                     "spending from all profiles starts off")
     }
 
     private static func saveAccount(_ name: String, to url: URL) throws {

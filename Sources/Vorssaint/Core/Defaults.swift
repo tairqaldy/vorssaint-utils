@@ -919,6 +919,8 @@ enum DefaultsKey {
     static let notchAgentsEnabled = "notchAgentsEnabled"
     static let notchAgentsClaude = "notchAgentsClaude"
     static let notchAgentsClaudeProfile = "notchAgentsClaudeProfile"
+    /// Spending also counts the sessions of every other Claude Code profile on this Mac.
+    static let notchAgentsClaudeAllProfiles = "notchAgentsClaudeAllProfiles"
     static let notchAgentsCodex = "notchAgentsCodex"
     /// The Codex homes, `CODEX_HOME` folders, that get limits cards of their own.
     static let notchAgentsCodexProfiles = "notchAgentsCodexProfiles"
@@ -1528,6 +1530,7 @@ enum Defaults {
         DefaultsKey.notchAgentsEnabled: false,
         DefaultsKey.notchAgentsClaude: true,
         DefaultsKey.notchAgentsClaudeProfile: "",
+        DefaultsKey.notchAgentsClaudeAllProfiles: false,
         DefaultsKey.notchAgentsCodex: true,
         DefaultsKey.notchAgentsCodexProfiles: "",
         DefaultsKey.notchAgentsOpenCode: true,

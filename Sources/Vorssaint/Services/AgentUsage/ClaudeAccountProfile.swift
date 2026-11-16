@@ -55,6 +55,19 @@ struct ClaudeAccountProfile: Equatable, Identifiable {
         return true
     }
 
+    static func countsAllProfiles(in defaults: UserDefaults = .standard) -> Bool {
+        defaults.bool(forKey: DefaultsKey.notchAgentsClaudeAllProfiles)
+    }
+
+    /// The profiles whose sessions count toward usage: the selected one and,
+    /// when asked, the default login and every common profile folder. Plans
+    /// and limits still come from the selected profile alone.
+    static func usageProfiles(selected: Self, includingOthers: Bool, home: URL) -> [Self] {
+        guard includingOthers else { return [selected] }
+        var seen = Set<String>()
+        return ([selected, Self()] + discover(home: home)).filter { seen.insert($0.id).inserted }
+    }
+
     func logURLs(home: URL) -> [URL] {
         guard isAvailable(home: home) else { return [] }
         let folders = isDefault ? [home.appending(path: ".claude"), home.appending(path: ".config/claude")]
